@@ -159,11 +159,19 @@ class KuramotoDataModule(LightningDataModule):
         Set variables: `self.data_train`, `self.data_val`, `self.data_test`. This method is called
         by lightning with both `trainer.fit()` and `trainer.test()`.
         """
-        # load and split datasets only if not loaded already
-        if not self.data_train and not self.data_val and not self.data_test:
-            self.data_train = torch.load(osp.join(self.dataset_path, "features_train.pt"))
-            self.data_val = torch.load(osp.join(self.dataset_path, "features_val.pt"))
-            self.data_test = torch.load(osp.join(self.dataset_path, "features_test.pt"))
+        # load datasets only if not loaded already
+        if self.data_train is None:
+            self.data_train = torch.load(osp.join(self.dataset_path, "features_train.pt")).reshape(
+                -1, self.hparams.cluster_size * self.hparams.n_clusters, self.hparams.n_timesteps
+            )
+        if self.data_val is None:
+            self.data_val = torch.load(osp.join(self.dataset_path, "features_val.pt")).reshape(
+                -1, self.hparams.cluster_size * self.hparams.n_clusters, self.hparams.n_timesteps
+            )
+        if self.data_test is None:
+            self.data_test = torch.load(osp.join(self.dataset_path, "features_test.pt")).reshape(
+                -1, self.hparams.cluster_size * self.hparams.n_clusters, self.hparams.n_timesteps
+            )
 
     def train_dataloader(self):
         return DataLoader(
