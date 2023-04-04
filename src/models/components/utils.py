@@ -21,7 +21,7 @@ def get_random_mask(features, r, nr):
     nones = torch.sum(features > 0.0).float()
     nzeros = features.shape[0] * features.shape[1] - nones
     pzeros = nones / nzeros / r * nr
-    probs = torch.zeros(features.shape).cuda()
+    probs = torch.zeros(features.shape)
     probs[features == 0.0] = pzeros
     probs[features > 0.0] = 1 / r
     mask = torch.bernoulli(probs)
@@ -91,7 +91,7 @@ def cal_similarity_graph(node_embeddings):
 def top_k(raw_graph, K):
     values, indices = raw_graph.topk(k=int(K), dim=-1)
     assert torch.max(indices) < raw_graph.shape[2]
-    mask = torch.zeros(raw_graph.shape).cuda()
+    mask = torch.zeros(raw_graph.shape)
 
     # print("mask", mask.shape, "raw_graph", raw_graph.shape)
 

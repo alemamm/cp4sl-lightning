@@ -42,13 +42,13 @@ class FullParam(nn.Module):
 
 
 class MLP_Diag(nn.Module):
-    def __init__(self, nlayers, n_nodes, k, knn_metric, gen_act, i):
+    def __init__(self, nlayers, n_timesteps, k, knn_metric, gen_act, i):
         super().__init__()
 
         self.i = i
         self.layers = nn.ModuleList()
         for _ in range(nlayers):
-            self.layers.append(Diag(n_nodes))
+            self.layers.append(Diag(n_timesteps))
         self.k = k
         self.knn_metric = knn_metric
         self.gen_act = gen_act
@@ -57,7 +57,7 @@ class MLP_Diag(nn.Module):
         for i, layer in enumerate(self.layers):
             h = layer(h)
             if i != (len(self.layers) - 1):
-                if self.gen_act == "relu":
+                if self.gen_act == "relu" or "elu":
                     h = F.relu(h)
                 elif self.gen_act == "tanh":
                     h = torch.tanh(h)

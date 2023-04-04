@@ -63,7 +63,7 @@ class GraphDAE(torch.nn.Module):
             )
         elif gen_mode == "MLP_Diag":
             self.graph_gen = MLP_Diag(
-                2, n_nodes, k, knn_metric, gen_act, i_
+                2, 200, k, knn_metric, gen_act, i_
             )  # make number of layers a parameter?
 
     def get_adj(self, h):

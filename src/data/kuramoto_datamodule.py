@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from kuramoto import Kuramoto
 from lightning import LightningDataModule
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, TensorDataset
 from tqdm import tqdm
 
 
@@ -66,6 +66,8 @@ class KuramotoDataModule(LightningDataModule):
             cluster_size=self.hparams.cluster_size,
         )
         self.dataset_path = osp.join(self.hparams.data_dir, self.prefix)
+
+        self.original_adj: torch.tensor = None
 
         self.data_train: Optional[Dataset] = None
         self.data_val: Optional[Dataset] = None
@@ -159,18 +161,31 @@ class KuramotoDataModule(LightningDataModule):
         Set variables: `self.data_train`, `self.data_val`, `self.data_test`. This method is called
         by lightning with both `trainer.fit()` and `trainer.test()`.
         """
+        # load original adjacency matrix
+        if self.original_adj is None:
+            self.original_adj = torch.load(osp.join(self.dataset_path, "original_adj.pt"))
+
         # load datasets only if not loaded already
         if self.data_train is None:
-            self.data_train = torch.load(osp.join(self.dataset_path, "features_train.pt")).reshape(
+            train_features = torch.load(osp.join(self.dataset_path, "features_train.pt")).reshape(
                 -1, self.hparams.cluster_size * self.hparams.n_clusters, self.hparams.n_timesteps
+            )
+            self.data_train = TensorDataset(
+                train_features, self.original_adj.repeat(train_features.shape[0], 1, 1)
             )
         if self.data_val is None:
-            self.data_val = torch.load(osp.join(self.dataset_path, "features_val.pt")).reshape(
+            val_features = torch.load(osp.join(self.dataset_path, "features_val.pt")).reshape(
                 -1, self.hparams.cluster_size * self.hparams.n_clusters, self.hparams.n_timesteps
             )
+            self.data_val = TensorDataset(
+                val_features, self.original_adj.repeat(val_features.shape[0], 1, 1)
+            )
         if self.data_test is None:
-            self.data_test = torch.load(osp.join(self.dataset_path, "features_test.pt")).reshape(
+            test_features = torch.load(osp.join(self.dataset_path, "features_test.pt")).reshape(
                 -1, self.hparams.cluster_size * self.hparams.n_clusters, self.hparams.n_timesteps
+            )
+            self.data_test = TensorDataset(
+                test_features, self.original_adj.repeat(test_features.shape[0], 1, 1)
             )
 
     def train_dataloader(self):
@@ -206,4 +221,5 @@ if __name__ == "__main__":
     dm.prepare_data()
     dm.setup()
     train_loader = dm.train_dataloader()
-    print(next(iter(train_loader)).shape)
+    batch_features, batch_adjs = next(iter(train_loader))
+    print(batch_features.shape, batch_adjs.shape)

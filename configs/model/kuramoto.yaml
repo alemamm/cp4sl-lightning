@@ -18,15 +18,15 @@ net:
   in_dim: 200
   n_nodes: 8
   hidden_dim: 512
-  n_layers: 4
+  n_layers: 2
   gen_mode: FP
   gen_act: elu
   k: 2
   knn_metric: cosine
   i_: 2
   normalization: sym
-  dropout_dae: 0.5
-  dropout_adj: 0.5
+  dropout_dae: 0.3
+  dropout_adj: 0.0
   graph_layer: GraphConv
 
 ratio: 20
