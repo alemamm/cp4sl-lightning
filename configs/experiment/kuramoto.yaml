@@ -18,7 +18,7 @@ tags: ["kuramoto", "gcn_dae"]
 seed: 12345
 
 data:
-  batch_size: 64
+  batch_size: 32
 
 logger:
   wandb:

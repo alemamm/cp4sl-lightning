@@ -1,11 +1,15 @@
+from time import time
 from typing import Any
 
 import cv2 as cv
 import numpy as np
 import torch
 from lightning import LightningModule
+from matplotlib import pyplot as plt
 from torchmetrics import MeanMetric, MinMetric
 from torchmetrics.regression import MeanAbsoluteError, MeanSquaredError
+
+from .components.utils import get_off_diagonal_elements, tril_values
 
 
 class CP4SLLitModule(LightningModule):
@@ -31,6 +35,7 @@ class CP4SLLitModule(LightningModule):
         ratio: float,
         nr: int,
         noise: str,
+        gen_type: str = "dynamic",
     ):
         super().__init__()
 
@@ -104,14 +109,18 @@ class CP4SLLitModule(LightningModule):
         self.train_recon_error(denoised_x, x)
         # scale adj to range [0, 1] for graph error calculation
 
-        # mask = torch.eye(adj.shape[1]).repeat(adj.shape[0], 1, 1).bool()
-        # adj[mask] = adj.min()
-        adj = (adj - adj.min()) / (adj.max() - adj.min())
-        # ret, adj = cv.threshold(np.uint8(adj.detach().numpy() * 255), 0., 1., cv.THRESH_BINARY+cv.THRESH_OTSU)
-        # adj = torch.from_numpy(adj)
-        # self.train_graph_error(adj[~mask], original_adj[~mask])
+        # not using batch of adjacency matrices if FP graph generation is used
+        if len(adj.shape) < 3:
+            original_adj = original_adj[0]
 
-        self.train_graph_error(adj, original_adj[0])
+        # Calculate graph error ignoring diagonal and using normalized values
+        self.train_graph_error(
+            torch.nn.functional.normalize(get_off_diagonal_elements(adj), dim=len(adj.shape) - 2),
+            torch.nn.functional.normalize(
+                get_off_diagonal_elements(original_adj), dim=len(adj.shape) - 2
+            ),
+        )
+
         self.log("train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log(
             "train/recon_error",
@@ -138,14 +147,28 @@ class CP4SLLitModule(LightningModule):
         # update and log metrics
         self.val_loss(loss)
         self.val_recon_error(denoised_x, x)
+
+        full_adj = adj
+
+        # adj = adj.detach().numpy()
+        # adj = adj.fill_diagonal_(torch.nan)
+        adj = get_off_diagonal_elements(adj)
+        original_adj = get_off_diagonal_elements(original_adj)
+
         # scale adj to range [0, 1] for graph error calculation
-
-        # mask = torch.eye(adj.shape[1]).repeat(adj.shape[0], 1, 1).bool()
-        # adj[mask] = adj.min()
         adj = (adj - adj.min()) / (adj.max() - adj.min())
-        # self.val_graph_error(adj[~mask], original_adj[~mask])
 
-        self.val_graph_error(adj, original_adj[0])
+        # not using batch of adjacency matrices if FP graph generation is used
+        if len(adj.shape) < 3:
+            original_adj = original_adj[0]
+
+        self.val_graph_error(adj, original_adj)
+
+        if self.global_step % 100 == 0:
+            plt.clf()
+            # plt.imshow(full_adj.detach().numpy())
+            plt.imshow(torch.mean(full_adj.detach(), dim=0).numpy())
+            plt.savefig("plots/" + str(time()) + ".png")
 
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log(
@@ -170,14 +193,16 @@ class CP4SLLitModule(LightningModule):
         # update and log metrics
         self.test_loss(loss)
         self.test_recon_error(denoised_x, x)
+
         # scale adj to range [0, 1] for graph error calculation
-
-        # mask = torch.eye(adj.shape[1]).repeat(adj.shape[0], 1, 1).bool()
-        # adj[mask] = adj.min()
         adj = (adj - adj.min()) / (adj.max() - adj.min())
-        # self.val_graph_error(adj[~mask], original_adj[~mask])
 
-        self.test_graph_error(adj, original_adj[0])
+        # not using batch of adjacency matrices if FP graph generation is used
+        if len(adj.shape) < 3:
+            original_adj = original_adj[0]
+
+        self.test_graph_error(adj, original_adj)
+
         self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log(
             "test/recon_error", self.test_recon_error, on_step=False, on_epoch=True, prog_bar=True

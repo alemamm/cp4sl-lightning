@@ -35,31 +35,15 @@ class DenseGraphTCNConv(torch.nn.Module):
 
     def __init__(
         self,
-        in_channels: int,
-        out_channels: int,
         n_channels: List[int],
         aggr: str = "add",
-        bias: bool = True,
     ):
         assert aggr in ["add", "mean", "max"]
         super().__init__()
-
-        self.in_channels = in_channels
-        self.out_channels = out_channels
+        self.n_channels = n_channels
         self.aggr = aggr
 
-        self.lin_rel = torch.nn.Linear(in_channels, out_channels, bias=bias)
-        self.lin_root = torch.nn.Linear(in_channels, out_channels, bias=False)
-
         self.tcn_rel = TCN(1, 1, num_channels=n_channels, kernel_size=7, dropout=0.3).float()
-        self.tcn_root = TCN(1, 1, num_channels=n_channels, kernel_size=7, dropout=0.3).float()
-
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        r"""Resets all learnable parameters of the module."""
-        self.lin_rel.reset_parameters()
-        self.lin_root.reset_parameters()
 
     def forward(
         self, x: torch.Tensor, adj: torch.Tensor, mask: Optional[torch.Tensor] = None
@@ -79,16 +63,9 @@ class DenseGraphTCNConv(torch.nn.Module):
                 the valid nodes for each graph. (default: :obj:`None`)
         """
 
-        # print("layer input x", x.shape)
-
         x = x.unsqueeze(0) if x.dim() == 2 else x
         adj = adj.unsqueeze(0) if adj.dim() == 2 else adj
         B, N, C = x.size()
-
-        # x = self.tcn_rel(x.view(-1, C).unsqueeze(2)).view(B, N, C)
-        # x = x + self.tcn_root(x.view(-1, C).unsqueeze(2)).view(B, N, C)
-
-        # print("x before agg", x.shape)
 
         if self.aggr == "add":
             out = torch.matmul(adj, x)
@@ -104,9 +81,7 @@ class DenseGraphTCNConv(torch.nn.Module):
         else:
             raise NotImplementedError
 
-        out = self.tcn_root(x.view(-1, C).unsqueeze(2)).view(B, N, C) + self.tcn_rel(
-            out.view(-1, C).unsqueeze(2)
-        ).view(B, N, C)
+        out = x + self.tcn_rel(out.view(-1, C).unsqueeze(2)).view(B, N, C)
 
         if mask is not None:
             out = out * mask.view(-1, N, 1).to(x.dtype)
@@ -114,7 +89,7 @@ class DenseGraphTCNConv(torch.nn.Module):
         return out
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({self.in_channels}, " f"{self.out_channels})"
+        return f"{self.__class__.__name__}({self.n_channels})"
 
 
 class DenseGraphConv(torch.nn.Module):
@@ -135,14 +110,12 @@ class DenseGraphConv(torch.nn.Module):
         self.aggr = aggr
 
         self.lin_rel = torch.nn.Linear(in_channels, out_channels, bias=bias)
-        self.lin_root = torch.nn.Linear(in_channels, out_channels, bias=False)
 
         self.reset_parameters()
 
     def reset_parameters(self):
         r"""Resets all learnable parameters of the module."""
         self.lin_rel.reset_parameters()
-        self.lin_root.reset_parameters()
 
     def forward(
         self, x: torch.Tensor, adj: torch.Tensor, mask: Optional[torch.Tensor] = None
@@ -179,11 +152,7 @@ class DenseGraphConv(torch.nn.Module):
         else:
             raise NotImplementedError
 
-        out = self.lin_rel(out)
-        root_out = self.lin_root(x)
-        out = out + root_out
-
-        # print(x.shape, root_out.shape, out.shape)
+        out = x + self.lin_rel(out)
 
         if mask is not None:
             out = out * mask.view(-1, N, 1).to(x.dtype)
