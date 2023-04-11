@@ -25,7 +25,7 @@ class FullParam(nn.Module):
         #    Adj = torch.exp(self.Adj)
         # elif self.gen_act == "elu":
         #    Adj = F.elu(self.Adj) + 1
-        return torch.sigmoid(self.Adj)  # F.elu(self.Adj) + 1
+        return F.elu(self.Adj)
 
 
 class MLP_Diag(nn.Module):

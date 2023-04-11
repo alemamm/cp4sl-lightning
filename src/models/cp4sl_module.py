@@ -78,24 +78,16 @@ class CP4SLLitModule(LightningModule):
         self.val_recon_error_best.reset()
         self.val_graph_error_best.reset()
 
-    def get_random_mask(self, x):
-        nones = torch.sum(x > 0.0).float()
-        nzeros = x.shape[0] * x.shape[1] - nones
-        pzeros = nones / nzeros / self.hparams.ratio * self.hparams.nr
-        probs = torch.zeros(x.shape)
-        probs[x == 0.0] = pzeros
-        probs[x > 0.0] = 1 / self.hparams.ratio
-        mask = torch.bernoulli(probs)
-        return mask
-
     def model_step(self, batch: Any):
         x, original_adj = batch
-        mask = self.get_random_mask(x)
+        mask = torch.bernoulli(torch.ones_like(x) * 0.1)
         # apply noise
         if self.hparams.noise == "mask":
-            noisy_x = x * (1 - mask)
+            noisy_x = x
+            noisy_x[mask > 0] = 0.0
+            # noisy_x = x * (1 - mask)
         elif self.hparams.noise == "normal":
-            noise = torch.normal(0.0, 0.1, size=x.shape)
+            noise = torch.normal(0.0, 1.0, size=x.shape)
             noisy_x = x + (noise * mask)
         denoised_x, adj = self.forward(x, noisy_x)
         indices = mask > 0
@@ -169,6 +161,13 @@ class CP4SLLitModule(LightningModule):
             else:
                 plt.imshow(np.median(full_adj.detach().numpy(), axis=0))
             plt.savefig("plots/" + str(time()) + "_val.png")
+
+            plt.clf()
+            plt.plot(x[0, 0, :].cpu().detach().numpy())
+            plt.plot(denoised_x[0, 0, :].cpu().detach().numpy())
+            plt.plot(x[0, 5, :].cpu().detach().numpy())
+            plt.plot(denoised_x[0, 5, :].cpu().detach().numpy())
+            plt.savefig("plots/" + str(time()) + "_x_denoised_x.png")
 
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log(

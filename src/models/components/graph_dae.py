@@ -1,8 +1,9 @@
 import torch
 import torch.nn.functional as F
+from torch_geometric.nn.dense import DenseGCNConv
 
 from .graph_generator import FullParam, MLP_Diag, TCNGen
-from .graph_layers import DenseGraphConv, DenseGraphTCNConv
+from .graph_layers import DenseGraphConv, DenseGraphTCNConv, DenseGraphTemporalConv
 from .utils import get_off_diagonal_elements, normalize_adj, symmetrize_adj
 
 
@@ -41,11 +42,29 @@ class GraphDAE(torch.nn.Module):
                 self.layers.append(DenseGraphConv(in_dim, hidden_dim, aggr="add"))
             self.layers.append(DenseGraphConv(hidden_dim, out_dim, aggr="add"))
 
-        elif graph_layer == "GraphTCNConv":
-            self.layers.append(DenseGraphTCNConv(n_channels=n_channels, aggr="add"))
+        elif graph_layer == "GCNConv":
+            self.layers.append(DenseGCNConv(in_dim, hidden_dim))
             for _ in range(n_layers - 2):
-                self.layers.append(DenseGraphTCNConv(n_channels=n_channels, aggr="add"))
-            self.layers.append(DenseGraphTCNConv(n_channels=n_channels, aggr="add"))
+                self.layers.append(DenseGCNConv(hidden_dim, hidden_dim))
+            self.layers.append(DenseGCNConv(hidden_dim, out_dim))
+
+        elif graph_layer == "GraphTemporalConv":
+            self.layers.append(
+                DenseGraphTemporalConv(in_dim, hidden_dim, aggr="add", dilation_size=2)
+            )
+            self.layers.append(
+                DenseGraphTemporalConv(hidden_dim, hidden_dim, aggr="add", dilation_size=4)
+            )
+            self.layers.append(
+                DenseGraphTemporalConv(hidden_dim, out_dim, aggr="add", dilation_size=8)
+            )
+            self.layers.append(torch.nn.Linear(out_dim, out_dim))
+
+        elif graph_layer == "GraphTCNConv":
+            self.layers.append(DenseGraphTCNConv(n_channels=n_channels, aggr="mean"))
+            for _ in range(n_layers - 2):
+                self.layers.append(DenseGraphTCNConv(n_channels=n_channels, aggr="mean"))
+            self.layers.append(DenseGraphTCNConv(n_channels=n_channels, aggr="mean"))
 
         if gen_mode == "FP":
             self.graph_gen = FullParam(
@@ -84,9 +103,14 @@ class GraphDAE(torch.nn.Module):
         Adj_ = self.get_adj(x)
         Adj = F.dropout(Adj_, p=self.dropout_adj)
         # Adj, Adj_ = torch.ones((8, 8)), torch.ones((8, 8))
+        identity = noisy_x
         for i, conv in enumerate(self.layers[:-1]):
-            denoised_x = conv(noisy_x, Adj)
-            denoised_x = F.relu(denoised_x)
-            denoised_x = F.dropout(denoised_x, p=self.dropout_dae)
-        denoised_x = self.layers[-1](denoised_x, Adj)  # no dropout on last layer
-        return denoised_x, Adj_
+            # identity = noisy_x
+            noisy_x = conv(noisy_x, Adj)  # , add_loop=False)
+            # noisy_x = noisy_x + identity
+            noisy_x = F.relu(noisy_x)
+            noisy_x = F.dropout(noisy_x, p=self.dropout_dae)
+            noisy_x = identity + noisy_x  # make residual connection option?
+        # add option to add residual connection to last layer
+        noisy_x = self.layers[-1](noisy_x, Adj)  # , add_loop=False)  # no dropout on last layer
+        return noisy_x, Adj_
