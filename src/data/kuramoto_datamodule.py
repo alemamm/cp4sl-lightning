@@ -44,7 +44,7 @@ class KuramotoDataModule(LightningDataModule):
         self,
         n_clusters: int = 2,
         cluster_size: int = 4,
-        n_timesteps: int = 200,
+        n_timesteps: int = 300,
         n_train: int = 300,
         n_val: int = 100,
         n_test: int = 100,
@@ -93,7 +93,9 @@ class KuramotoDataModule(LightningDataModule):
         model = Kuramoto(
             coupling=10,
             dt=0.001,
-            T=self.hparams.n_timesteps * 0.001,
+            T=self.hparams.n_timesteps
+            * 2
+            * 0.001,  # double timesteos to cover train and val/test ranges
             n_nodes=len(single_sample_adj.numpy()),
             natfreqs=nat_freqs,
         )
@@ -108,7 +110,9 @@ class KuramotoDataModule(LightningDataModule):
             )
             act_mats_train.append(act_mat)
         act_mats_train_nd = np.vstack(act_mats_train)
-        act_mats_train_t = torch.from_numpy(act_mats_train_nd).type(torch.FloatTensor)
+        act_mats_train_t = torch.from_numpy(act_mats_train_nd).type(torch.FloatTensor)[
+            :, 0 : self.hparams.n_timesteps
+        ]
 
         act_mats_val = []
         for i in tqdm(range(0, self.hparams.n_val)):
@@ -120,19 +124,29 @@ class KuramotoDataModule(LightningDataModule):
             )
             act_mats_val.append(act_mat)
         act_mats_val_nd = np.vstack(act_mats_val)
-        act_mats_val_t = torch.from_numpy(act_mats_val_nd).type(torch.FloatTensor)
+        act_mats_val_t = torch.from_numpy(act_mats_val_nd).type(torch.FloatTensor)[
+            :, self.hparams.n_timesteps : self.hparams.n_timesteps * 2
+        ]
+
+        # Shuffling rows of the adjacency matrix
+        r = torch.tensor([7, 1, 2, 3, 4, 5, 6, 0])
+        c = torch.tensor([7, 1, 2, 3, 4, 5, 6, 0])
+        shuffled_sample_adj = single_sample_adj[r[:, None], c]  # shuffles rows
+        shuffled_sample_adj = single_sample_adj[r][:, c]  # shuffles columns
 
         act_mats_test = []
         for i in tqdm(range(0, self.hparams.n_test)):
             act_mat = model.run(
-                adj_mat=single_sample_adj.numpy(),
+                adj_mat=shuffled_sample_adj.numpy(),
                 angles_vec=np.random.uniform(
                     0, 2 * np.pi, size=self.hparams.n_clusters * self.hparams.cluster_size
                 ),
             )
             act_mats_test.append(act_mat)
         act_mats_test_nd = np.vstack(act_mats_test)
-        act_mats_test_t = torch.from_numpy(act_mats_test_nd).type(torch.FloatTensor)
+        act_mats_test_t = torch.from_numpy(act_mats_test_nd).type(torch.FloatTensor)[
+            :, self.hparams.n_timesteps : self.hparams.n_timesteps * 2
+        ]
 
         return single_sample_adj, act_mats_train_t, act_mats_val_t, act_mats_test_t
 

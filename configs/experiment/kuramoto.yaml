@@ -23,6 +23,4 @@ data:
 logger:
   wandb:
     tags: ${tags}
-    group: "cp4sl GraphConv"
-  aim:
-    experiment: "test cp4sl logging"
+    group: "cp4sl Test shuffled"

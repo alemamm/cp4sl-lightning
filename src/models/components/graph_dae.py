@@ -3,7 +3,7 @@ import torch.nn.functional as F
 
 from .graph_generator import FullParam, MLP_Diag, TCNGen
 from .graph_layers import DenseGraphConv, DenseGraphTCNConv
-from .utils import normalize_adj, symmetrize_adj
+from .utils import get_off_diagonal_elements, normalize_adj, symmetrize_adj
 
 
 class GraphDAE(torch.nn.Module):
@@ -77,6 +77,7 @@ class GraphDAE(torch.nn.Module):
         Adj_ = self.graph_gen(h)
         Adj_ = symmetrize_adj(Adj_, self.gen_mode)
         Adj_ = normalize_adj(Adj_, self.normalization, self.gen_mode)
+        Adj_ = get_off_diagonal_elements(Adj_)
         return Adj_
 
     def forward(self, x, noisy_x):  # x corresponds to noisy features to be denoised

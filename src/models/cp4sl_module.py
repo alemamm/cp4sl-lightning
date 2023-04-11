@@ -46,7 +46,7 @@ class CP4SLLitModule(LightningModule):
         self.net = net
 
         # loss function
-        self.criterion = torch.nn.L1Loss()
+        self.criterion = torch.nn.MSELoss()  # torch.nn.L1Loss()
 
         # metric objects for calculating reconstruction error and averaging error across batches
         self.train_recon_error = MeanAbsoluteError()
@@ -150,8 +150,6 @@ class CP4SLLitModule(LightningModule):
 
         full_adj = adj
 
-        # adj = adj.detach().numpy()
-        # adj = adj.fill_diagonal_(torch.nan)
         adj = get_off_diagonal_elements(adj)
         original_adj = get_off_diagonal_elements(original_adj)
 
@@ -166,9 +164,11 @@ class CP4SLLitModule(LightningModule):
 
         if self.global_step % 100 == 0:
             plt.clf()
-            # plt.imshow(full_adj.detach().numpy())
-            plt.imshow(torch.mean(full_adj.detach(), dim=0).numpy())
-            plt.savefig("plots/" + str(time()) + ".png")
+            if len(full_adj.shape) < 3:
+                plt.imshow(full_adj.detach().numpy())
+            else:
+                plt.imshow(np.median(full_adj.detach().numpy(), axis=0))
+            plt.savefig("plots/" + str(time()) + "_val.png")
 
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log(
@@ -194,6 +194,11 @@ class CP4SLLitModule(LightningModule):
         self.test_loss(loss)
         self.test_recon_error(denoised_x, x)
 
+        full_adj = adj
+
+        adj = get_off_diagonal_elements(adj)
+        original_adj = get_off_diagonal_elements(original_adj)
+
         # scale adj to range [0, 1] for graph error calculation
         adj = (adj - adj.min()) / (adj.max() - adj.min())
 
@@ -202,6 +207,13 @@ class CP4SLLitModule(LightningModule):
             original_adj = original_adj[0]
 
         self.test_graph_error(adj, original_adj)
+
+        plt.clf()
+        if len(full_adj.shape) < 3:
+            plt.imshow(full_adj.detach().numpy())
+        else:
+            plt.imshow(np.median(full_adj.detach().numpy(), axis=0))
+        plt.savefig("plots/" + str(time()) + "_test.png")
 
         self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log(
