@@ -18,7 +18,7 @@ net:
   in_dim: 300
   n_nodes: 8
   hidden_dim: 300
-  n_layers: 2
+  n_layers: 5
   gen_mode: TCNGen
   gen_act: elu
   k: 2

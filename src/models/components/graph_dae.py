@@ -103,9 +103,9 @@ class GraphDAE(torch.nn.Module):
         Adj_ = self.get_adj(x)
         Adj = F.dropout(Adj_, p=self.dropout_adj)
         # Adj, Adj_ = torch.ones((8, 8)), torch.ones((8, 8))
-        identity = noisy_x
+        # identity = noisy_x
         for i, conv in enumerate(self.layers[:-1]):
-            # identity = noisy_x
+            identity = noisy_x
             noisy_x = conv(noisy_x, Adj)  # , add_loop=False)
             # noisy_x = noisy_x + identity
             noisy_x = F.relu(noisy_x)

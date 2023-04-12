@@ -8,7 +8,7 @@ defaults:
   - override /model: kuramoto.yaml
   - override /callbacks: default.yaml
   - override /trainer: default.yaml
-#  - override /logger: wandb.yaml
+  - override /logger: wandb.yaml
 
 # all parameters below will be merged with parameters from default configurations set above
 # this allows you to overwrite only specified parameters
@@ -20,7 +20,9 @@ seed: 12345
 data:
   batch_size: 32
 
+max_epochs: 200
+
 logger:
   wandb:
     tags: ${tags}
-    group: "cp4sl Test shuffled"
+    group: "cp4sl Test shuffled fixed masking"
