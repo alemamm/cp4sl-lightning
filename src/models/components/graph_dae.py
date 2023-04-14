@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 
-from .graph_generator import FullParam, TCNGen
+from .graph_generator import DynamicGen, StaticGen
 from .graph_layers import DenseGraphTCNConv
 from .utils import get_off_diagonal_elements, normalize_adj, symmetrize_adj
 
@@ -29,10 +29,10 @@ class GraphDAE(torch.nn.Module):
             self.layers.append(DenseGraphTCNConv(n_channels=n_channels, aggr="mean"))
         self.layers.append(DenseGraphTCNConv(n_channels=n_channels, aggr="mean"))
 
-        if gen_mode == "FP":
-            self.graph_gen = FullParam(n_nodes)
-        elif gen_mode == "TCNGen":
-            self.graph_gen = TCNGen(in_dim=1, channels=[10] * 3, out_dim=1, kernel_size=7)
+        if gen_mode == "static":
+            self.graph_gen = StaticGen(n_nodes)
+        elif gen_mode == "dynamic":
+            self.graph_gen = DynamicGen(in_dim=1, channels=[10] * 3, out_dim=1, kernel_size=7)
 
     def get_adj(self, h):
         Adj_ = self.graph_gen(h)
