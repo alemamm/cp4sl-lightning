@@ -6,10 +6,11 @@ import numpy as np
 import torch
 from lightning import LightningModule
 from matplotlib import pyplot as plt
+from matplotlib.pyplot import cm
 from torchmetrics import MeanMetric, MinMetric
 from torchmetrics.regression import MeanAbsoluteError, MeanSquaredError
 
-from .components.utils import get_off_diagonal_elements, tril_values
+from .components.utils import get_off_diagonal_elements
 
 
 class CP4SLLitModule(LightningModule):
@@ -32,10 +33,7 @@ class CP4SLLitModule(LightningModule):
         net: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
-        ratio: float,
-        nr: int,
         noise: str,
-        gen_type: str = "dynamic",
     ):
         super().__init__()
 
@@ -49,14 +47,14 @@ class CP4SLLitModule(LightningModule):
         self.criterion = torch.nn.MSELoss()  # torch.nn.L1Loss()
 
         # metric objects for calculating reconstruction error and averaging error across batches
-        self.train_recon_error = MeanAbsoluteError()
-        self.val_recon_error = MeanAbsoluteError()
-        self.test_recon_error = MeanAbsoluteError()
+        self.train_recon_error = MeanSquaredError()
+        self.val_recon_error = MeanSquaredError()
+        self.test_recon_error = MeanSquaredError()
 
         # metric objects for calculating reconstruction error and averaging error across batches
-        self.train_graph_error = MeanAbsoluteError()
-        self.val_graph_error = MeanAbsoluteError()
-        self.test_graph_error = MeanAbsoluteError()
+        self.train_adj_error = MeanAbsoluteError()
+        self.val_adj_error = MeanAbsoluteError()
+        self.test_adj_error = MeanAbsoluteError()
 
         # for averaging loss across batches
         self.train_loss = MeanMetric()
@@ -65,7 +63,7 @@ class CP4SLLitModule(LightningModule):
 
         # for tracking best so far validation errors
         self.val_recon_error_best = MinMetric()
-        self.val_graph_error_best = MinMetric()
+        self.val_adj_error_best = MinMetric()
 
     def forward(self, x: torch.Tensor, noisy_x: torch.Tensor):
         return self.net(x, noisy_x)
@@ -76,7 +74,7 @@ class CP4SLLitModule(LightningModule):
         self.val_loss.reset()
         self.val_recon_error.reset()
         self.val_recon_error_best.reset()
-        self.val_graph_error_best.reset()
+        self.val_adj_error_best.reset()
 
     def model_step(self, batch: Any):
         x, original_adj = batch
@@ -85,7 +83,6 @@ class CP4SLLitModule(LightningModule):
         if self.hparams.noise == "mask":
             noisy_x = x
             noisy_x[mask > 0] = 0.0
-            # noisy_x = x * (1 - mask)
         elif self.hparams.noise == "normal":
             noise = torch.normal(0.0, 1.0, size=x.shape)
             noisy_x = x + (noise * mask)
@@ -99,31 +96,30 @@ class CP4SLLitModule(LightningModule):
         # update and log metrics
         self.train_loss(loss)
         self.train_recon_error(denoised_x, x)
+
+        adj = get_off_diagonal_elements(adj)
+        original_adj = get_off_diagonal_elements(original_adj)
+
         # scale adj to range [0, 1] for graph error calculation
+        adj = (adj - adj.min()) / (adj.max() - adj.min())
 
         # not using batch of adjacency matrices if FP graph generation is used
         if len(adj.shape) < 3:
             original_adj = original_adj[0]
 
-        # Calculate graph error ignoring diagonal and using normalized values
-        self.train_graph_error(
-            torch.nn.functional.normalize(get_off_diagonal_elements(adj), dim=len(adj.shape) - 2),
-            torch.nn.functional.normalize(
-                get_off_diagonal_elements(original_adj), dim=len(adj.shape) - 2
-            ),
-        )
+        self.train_adj_error(adj, original_adj)
 
         self.log("train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log(
-            "train/recon_error",
+            "train/rec_error",
             self.train_recon_error,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
         )
         self.log(
-            "train/graph_error",
-            self.train_graph_error,
+            "train/adj_error",
+            self.train_adj_error,
             on_step=False,
             on_epoch=True,
             prog_bar=True,
@@ -152,40 +148,53 @@ class CP4SLLitModule(LightningModule):
         if len(adj.shape) < 3:
             original_adj = original_adj[0]
 
-        self.val_graph_error(adj, original_adj)
+        self.val_adj_error(adj, original_adj)
 
-        if self.global_step % 100 == 0:
+        if self.current_epoch % 5 == 0:
             plt.clf()
             if len(full_adj.shape) < 3:
                 plt.imshow(full_adj.detach().numpy())
             else:
                 plt.imshow(np.median(full_adj.detach().numpy(), axis=0))
-            plt.savefig("plots/" + str(time()) + "_val.png")
+            plt.savefig("plots/" + str(time()) + "_" + str(self.current_epoch) + "_val.png")
 
             plt.clf()
-            plt.plot(x[0, 0, :].cpu().detach().numpy())
-            plt.plot(denoised_x[0, 0, :].cpu().detach().numpy())
-            plt.plot(x[0, 5, :].cpu().detach().numpy())
-            plt.plot(denoised_x[0, 5, :].cpu().detach().numpy())
-            plt.savefig("plots/" + str(time()) + "_x_denoised_x.png")
+            color = cm.rainbow(np.linspace(0, 1, adj.shape[1]))
+            colormap = plt.cm.gist_rainbow
+            colors = [colormap(i) for i in np.linspace(0, 1, adj.shape[1])]
+            for i, color in enumerate(colors):
+                random_sample = np.random.randint(0, x.shape[0])
+                plt.plot(
+                    x[random_sample, i, :].cpu().detach().numpy(),
+                    color=color,
+                    linestyle="solid",
+                    alpha=0.7,
+                )
+                plt.plot(
+                    denoised_x[random_sample, i, :].cpu().detach().numpy(),
+                    color=color,
+                    linestyle="dashed",
+                    alpha=0.7,
+                )
+            plt.savefig(
+                "plots/" + str(time()) + "_" + str(self.current_epoch) + "_x_denoised_x.png"
+            )
 
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log(
-            "val/recon_error", self.val_recon_error, on_step=False, on_epoch=True, prog_bar=True
+            "val/rec_error", self.val_recon_error, on_step=False, on_epoch=True, prog_bar=True
         )
-        self.log(
-            "val/graph_error", self.val_graph_error, on_step=False, on_epoch=True, prog_bar=True
-        )
+        self.log("val/adj_error", self.val_adj_error, on_step=False, on_epoch=True, prog_bar=True)
 
     def on_validation_epoch_end(self):
         recon_error = self.val_recon_error.compute()  # get current val reconstruction error
         self.val_recon_error_best(recon_error)  # update best so far val reconstruction error
-        graph_error = self.val_graph_error.compute()  # get current val graph error
-        self.val_graph_error_best(graph_error)  # update best so far val graph error
+        adj_error = self.val_adj_error.compute()  # get current val graph error
+        self.val_adj_error_best(adj_error)  # update best so far val graph error
         # log `val_error_best` as a value through `.compute()` method, instead of as a metric object
         # otherwise metric would be reset by lightning after each epoch
-        self.log("val/recon_error_best", self.val_recon_error_best.compute(), prog_bar=True)
-        self.log("val/graph_error_best", self.val_graph_error_best.compute(), prog_bar=True)
+        self.log("val/rec_error_best", self.val_recon_error_best.compute(), prog_bar=True)
+        self.log("val/adj_error_best", self.val_adj_error_best.compute(), prog_bar=True)
 
     def test_step(self, batch: Any, batch_idx: int):
         original_adj, adj, x, denoised_x, loss = self.model_step(batch)
@@ -205,21 +214,21 @@ class CP4SLLitModule(LightningModule):
         if len(adj.shape) < 3:
             original_adj = original_adj[0]
 
-        self.test_graph_error(adj, original_adj)
+        self.test_adj_error(adj, original_adj)
 
         plt.clf()
         if len(full_adj.shape) < 3:
             plt.imshow(full_adj.detach().numpy())
         else:
             plt.imshow(np.median(full_adj.detach().numpy(), axis=0))
-        plt.savefig("plots/" + str(time()) + "_test.png")
+        plt.savefig("plots/" + str(time()) + "_" + str(self.current_epoch) + "_test.png")
 
         self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log(
-            "test/recon_error", self.test_recon_error, on_step=False, on_epoch=True, prog_bar=True
+            "test/rec_error", self.test_recon_error, on_step=False, on_epoch=True, prog_bar=True
         )
         self.log(
-            "test/graph_error", self.test_graph_error, on_step=False, on_epoch=True, prog_bar=True
+            "test/adj_error", self.test_adj_error, on_step=False, on_epoch=True, prog_bar=True
         )
 
     def on_test_epoch_end(self):
