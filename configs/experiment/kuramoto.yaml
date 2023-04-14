@@ -20,9 +20,9 @@ seed: 12345
 data:
   batch_size: 32
 
-max_epochs: 200
+max_epochs: 100
 
 logger:
   wandb:
     tags: ${tags}
-    group: "cp4sl Test shuffled fixed masking"
+    group: "cp4sl first paper draft"

@@ -15,20 +15,10 @@ scheduler:
 
 net:
   _target_: src.models.components.graph_dae.GraphDAE
-  in_dim: 300
   n_nodes: 8
-  hidden_dim: 300
-  n_layers: 5
-  gen_mode: TCNGen
-  gen_act: elu
-  k: 2
-  knn_metric: cosine
-  i_: 2
-  normalization: sym
+  n_layers: 2
+  gen_mode: static # Options: "static", "dynamic"
   dropout_dae: 0.5
   dropout_adj: 0.0
-  graph_layer: GraphTCNConv
 
-ratio: 20
-nr: 5
 noise: normal
