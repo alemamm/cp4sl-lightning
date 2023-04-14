@@ -11,7 +11,7 @@ class FullParam(nn.Module):
         self.Adj = nn.Parameter(torch.ones(n_nodes, n_nodes))
 
     def forward(self, h):
-        return F.elu(self.Adj)
+        return torch.sigmoid(self.Adj)
 
 
 class TCNGen(nn.Module):
@@ -22,7 +22,7 @@ class TCNGen(nn.Module):
     def internal_forward(self, h):
         B, N, C = h.size()
         h = self.tcn(h.view(-1, C).unsqueeze(2)).view(B, N, C)
-        return F.elu(h)
+        return torch.sigmoid(h)
 
     def forward(self, features):
         embeddings = self.internal_forward(features)
