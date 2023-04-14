@@ -2,21 +2,18 @@ import torch
 import torch.nn.functional as F
 
 from .graph_generator import FullParam, TCNGen
-from .graph_layers import DenseGraphConv, DenseGraphTCNConv
+from .graph_layers import DenseGraphTCNConv
 from .utils import get_off_diagonal_elements, normalize_adj, symmetrize_adj
 
 
 class GraphDAE(torch.nn.Module):
     def __init__(
         self,
-        in_dim,
-        hidden_dim,
         n_nodes,
         n_layers,
         gen_mode,
         dropout_dae,
         dropout_adj,
-        graph_layer,
     ):
         super().__init__()
         self.dropout_dae = dropout_dae
@@ -24,20 +21,13 @@ class GraphDAE(torch.nn.Module):
         self.gen_mode = gen_mode
 
         n_channels = [10] * 5  # [args.nhid] * args.levels for TCN within GraphTCNConv
-        out_dim = in_dim  # input and output have same dimensions since we are doing denoising/reconstruction
 
         self.layers = torch.nn.ModuleList()
 
-        if graph_layer == "GraphConv":
-            self.layers.append(DenseGraphConv(in_dim, hidden_dim, aggr="mean"))
-            for _ in range(n_layers - 2):
-                self.layers.append(DenseGraphConv(hidden_dim, hidden_dim, aggr="mean"))
-            self.layers.append(DenseGraphConv(hidden_dim, out_dim, aggr="mean"))
-        elif graph_layer == "GraphTCNConv":
+        self.layers.append(DenseGraphTCNConv(n_channels=n_channels, aggr="mean"))
+        for _ in range(n_layers - 2):
             self.layers.append(DenseGraphTCNConv(n_channels=n_channels, aggr="mean"))
-            for _ in range(n_layers - 2):
-                self.layers.append(DenseGraphTCNConv(n_channels=n_channels, aggr="mean"))
-            self.layers.append(DenseGraphTCNConv(n_channels=n_channels, aggr="mean"))
+        self.layers.append(DenseGraphTCNConv(n_channels=n_channels, aggr="mean"))
 
         if gen_mode == "FP":
             self.graph_gen = FullParam(n_nodes)
