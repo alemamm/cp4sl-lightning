@@ -22,7 +22,7 @@ class TCNGen(nn.Module):
     def internal_forward(self, h):
         B, N, C = h.size()
         h = self.tcn(h.view(-1, C).unsqueeze(2)).view(B, N, C)
-        return torch.elu(h)
+        return F.elu(h)
 
     def forward(self, features):
         embeddings = self.internal_forward(features)
