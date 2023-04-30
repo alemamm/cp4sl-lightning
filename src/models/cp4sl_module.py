@@ -10,7 +10,7 @@ from matplotlib.pyplot import cm
 from torchmetrics import MeanMetric, MinMetric
 from torchmetrics.regression import MeanAbsoluteError, MeanSquaredError
 
-from .components.utils import get_off_diagonal_elements
+from .components.utils import get_off_diagonal_elements, min_max_scale_batch
 
 
 class CP4SLLitModule(LightningModule):
@@ -33,7 +33,6 @@ class CP4SLLitModule(LightningModule):
         net: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
-        noise: str,
     ):
         super().__init__()
 
@@ -61,10 +60,6 @@ class CP4SLLitModule(LightningModule):
         self.val_loss = MeanMetric()
         self.test_loss = MeanMetric()
 
-        # for tracking best so far validation errors
-        self.val_recon_error_best = MinMetric()
-        self.val_adj_error_best = MinMetric()
-
     def forward(self, x: torch.Tensor, noisy_x: torch.Tensor):
         return self.net(x, noisy_x)
 
@@ -73,41 +68,33 @@ class CP4SLLitModule(LightningModule):
         # so it's worth to make sure validation metrics don't store results from these checks
         self.val_loss.reset()
         self.val_recon_error.reset()
-        self.val_recon_error_best.reset()
-        self.val_adj_error_best.reset()
 
     def model_step(self, batch: Any):
-        x, original_adj = batch
-        mask = torch.bernoulli(torch.ones_like(x) * 0.1)
-        # apply noise
-        if self.hparams.noise == "mask":
-            noisy_x = x
-            noisy_x[mask > 0] = 0.0
-        elif self.hparams.noise == "normal":
-            noise = torch.normal(0.0, 1.0, size=x.shape)
-            noisy_x = x + (noise * mask)
-        denoised_x, adj = self.forward(x, noisy_x)
-        indices = mask > 0
-        loss = self.criterion(denoised_x[indices], x[indices])
-        return original_adj, adj, x, denoised_x, loss
+        x, gt_adj = batch
+        noise = torch.normal(0.0, 1.0, size=x.shape)
+        noisy_x = x + noise
+        denoised_x, adj, embeddings = self.forward(x, noisy_x)
+        loss = self.criterion(denoised_x, x)
+        return gt_adj, adj, x, denoised_x, loss, embeddings
 
     def training_step(self, batch: Any, batch_idx: int):
-        original_adj, adj, x, denoised_x, loss = self.model_step(batch)
+        gt_adj, adj, x, denoised_x, loss, embeddings = self.model_step(batch)
         # update and log metrics
         self.train_loss(loss)
         self.train_recon_error(denoised_x, x)
 
-        adj = get_off_diagonal_elements(adj)
-        original_adj = get_off_diagonal_elements(original_adj)
-
-        # scale adj to range [0, 1] for graph error calculation
-        adj = (adj - adj.min()) / (adj.max() - adj.min())
+        gt_adj = get_off_diagonal_elements(gt_adj)
 
         # not using batch of adjacency matrices if FP graph generation is used
         if len(adj.shape) < 3:
-            original_adj = original_adj[0]
+            gt_adj = gt_adj[0]
+            # scale adj to range [0, 1] for graph error calculation
+            adj = (adj - adj.min()) / (adj.max() - adj.min())
+        else:
+            # scale adj to range [0, 1] for graph error calculation
+            adj = min_max_scale_batch(adj.clone())
 
-        self.train_adj_error(adj, original_adj)
+        self.train_adj_error(adj, gt_adj)
 
         self.log("train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log(
@@ -131,31 +118,30 @@ class CP4SLLitModule(LightningModule):
         pass
 
     def validation_step(self, batch: Any, batch_idx: int):
-        original_adj, adj, x, denoised_x, loss = self.model_step(batch)
+        gt_adj, adj, x, denoised_x, loss, embeddings = self.model_step(batch)
         # update and log metrics
         self.val_loss(loss)
         self.val_recon_error(denoised_x, x)
 
-        full_adj = adj
-
-        adj = get_off_diagonal_elements(adj)
-        original_adj = get_off_diagonal_elements(original_adj)
-
-        # scale adj to range [0, 1] for graph error calculation
-        adj = (adj - adj.min()) / (adj.max() - adj.min())
+        gt_adj = get_off_diagonal_elements(gt_adj)
 
         # not using batch of adjacency matrices if FP graph generation is used
         if len(adj.shape) < 3:
-            original_adj = original_adj[0]
+            gt_adj = gt_adj[0]
+            # scale adj to range [0, 1] for graph error calculation
+            adj = (adj - adj.min()) / (adj.max() - adj.min())
+        else:
+            # scale adj to range [0, 1] for graph error calculation
+            adj = min_max_scale_batch(adj.clone())
 
-        self.val_adj_error(adj, original_adj)
+        self.val_adj_error(adj, gt_adj)
 
         if self.current_epoch % 5 == 0:
             plt.clf()
-            if len(full_adj.shape) < 3:
-                plt.imshow(full_adj.detach().numpy())
+            if len(adj.shape) < 3:
+                plt.imshow(adj.detach().numpy())
             else:
-                plt.imshow(np.median(full_adj.detach().numpy(), axis=0))
+                plt.imshow(np.mean(adj.detach().numpy(), axis=0))
             plt.savefig("plots/" + str(time()) + "_" + str(self.current_epoch) + "_val.png")
 
             plt.clf()
@@ -187,40 +173,34 @@ class CP4SLLitModule(LightningModule):
         self.log("val/adj_error", self.val_adj_error, on_step=False, on_epoch=True, prog_bar=True)
 
     def on_validation_epoch_end(self):
-        recon_error = self.val_recon_error.compute()  # get current val reconstruction error
-        self.val_recon_error_best(recon_error)  # update best so far val reconstruction error
-        adj_error = self.val_adj_error.compute()  # get current val graph error
-        self.val_adj_error_best(adj_error)  # update best so far val graph error
-        # log `val_error_best` as a value through `.compute()` method, instead of as a metric object
-        # otherwise metric would be reset by lightning after each epoch
-        self.log("val/rec_error_best", self.val_recon_error_best.compute(), prog_bar=True)
-        self.log("val/adj_error_best", self.val_adj_error_best.compute(), prog_bar=True)
+        pass
 
     def test_step(self, batch: Any, batch_idx: int):
-        original_adj, adj, x, denoised_x, loss = self.model_step(batch)
+        gt_adj, adj, x, denoised_x, loss, embeddings = self.model_step(batch)
         # update and log metrics
         self.test_loss(loss)
         self.test_recon_error(denoised_x, x)
 
-        full_adj = adj
-
-        adj = get_off_diagonal_elements(adj)
-        original_adj = get_off_diagonal_elements(original_adj)
-
-        # scale adj to range [0, 1] for graph error calculation
-        adj = (adj - adj.min()) / (adj.max() - adj.min())
+        gt_adj = get_off_diagonal_elements(gt_adj)
 
         # not using batch of adjacency matrices if FP graph generation is used
         if len(adj.shape) < 3:
-            original_adj = original_adj[0]
+            gt_adj = gt_adj[0]
+            # scale adj to range [0, 1] for graph error calculation
+            adj = (adj - adj.min()) / (adj.max() - adj.min())
+        else:
+            # scale adj to range [0, 1] for graph error calculation
+            adj = min_max_scale_batch(adj.clone())
 
-        self.test_adj_error(adj, original_adj)
+        self.test_adj_error(adj, gt_adj)
+
+        # torch.save(embeddings, "embeddings/" + str(time()) + "_" + str(batch_idx) + "_embeddings.pt")
 
         plt.clf()
-        if len(full_adj.shape) < 3:
-            plt.imshow(full_adj.detach().numpy())
+        if len(adj.shape) < 3:
+            plt.imshow(adj.detach().numpy())
         else:
-            plt.imshow(np.median(full_adj.detach().numpy(), axis=0))
+            plt.imshow(np.mean(adj.detach().numpy(), axis=0))
         plt.savefig("plots/" + str(time()) + "_" + str(self.current_epoch) + "_test.png")
 
         self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
