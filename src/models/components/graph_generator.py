@@ -11,7 +11,8 @@ class StaticGen(nn.Module):
         self.Adj = nn.Parameter(torch.ones(n_nodes, n_nodes))
 
     def forward(self, h):
-        return F.elu(self.Adj)
+        embeddings = None
+        return F.elu(self.Adj), embeddings
 
 
 class DynamicGen(nn.Module):
@@ -26,6 +27,7 @@ class DynamicGen(nn.Module):
 
     def forward(self, features):
         embeddings = self.internal_forward(features)
+        # embeddings = torch.sigmoid(features) # use to test the the importance of the TCN generator
         embeddings = F.normalize(embeddings, dim=1, p=2)
         similarities = torch.bmm(embeddings, embeddings.permute(0, 2, 1))
-        return similarities
+        return similarities, embeddings
