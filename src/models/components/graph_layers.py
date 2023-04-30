@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List
 
 import torch
 import torch.nn as nn
@@ -20,60 +20,15 @@ class TCN(nn.Module):
 
 
 class DenseGraphTCNConv(torch.nn.Module):
-    r"""See :class:`torch_geometric.nn.conv.GraphConv`."""
-
-    def __init__(
-        self,
-        n_channels: List[int],
-        aggr: str = "add",
-    ):
-        assert aggr in ["add", "mean", "max"]
+    def __init__(self, n_channels: List[int]):
         super().__init__()
         self.n_channels = n_channels
-        self.aggr = aggr
-        self.tcn_rel = TCN(1, 1, num_channels=n_channels, kernel_size=7, dropout=0.3).float()
+        self.tcn_rel = TCN(1, 1, num_channels=n_channels, kernel_size=7, dropout=0.0).float()
 
-    def forward(
-        self, x: torch.Tensor, adj: torch.Tensor, mask: Optional[torch.Tensor] = None
-    ) -> torch.Tensor:
-        r"""
-        Args:
-            x (torch.Tensor): Node feature tensor
-                :math:`\mathbf{X} \in \mathbb{R}^{B \times N \times F}`, with
-                batch-size :math:`B`, (maximum) number of nodes :math:`N` for
-                each graph, and feature dimension :math:`F`.
-            adj (torch.Tensor): Adjacency tensor
-                :math:`\mathbf{A} \in \mathbb{R}^{B \times N \times N}`.
-                The adjacency tensor is broadcastable in the batch dimension,
-                resulting in a shared adjacency matrix for the complete batch.
-            mask (torch.Tensor, optional): Mask matrix
-                :math:`\mathbf{M} \in {\{ 0, 1 \}}^{B \times N}` indicating
-                the valid nodes for each graph. (default: :obj:`None`)
-        """
+    def forward(self, x: torch.Tensor, adj: torch.Tensor) -> torch.Tensor:
         x = x.unsqueeze(0) if x.dim() == 2 else x
         adj = adj.unsqueeze(0) if adj.dim() == 2 else adj
         B, N, C = x.size()
-
-        if self.aggr == "add":
-            out = torch.matmul(adj, x)
-        elif self.aggr == "mean":
-            out = torch.matmul(adj, x)
-            out = out / adj.sum(dim=-1, keepdim=True).clamp_(min=1)
-        elif self.aggr == "max":
-            out = x.unsqueeze(-2).repeat(1, 1, N, 1)
-            adj = adj.unsqueeze(-1).expand(B, N, N, C)
-            out[adj == 0] = float("-inf")
-            out = out.max(dim=-3)[0]
-            out[out == float("-inf")] = 0.0
-        else:
-            raise NotImplementedError
-
+        out = torch.matmul(adj, x)
         out = self.tcn_rel(out.view(-1, C).unsqueeze(2)).view(B, N, C)
-
-        if mask is not None:
-            out = out * mask.view(-1, N, 1).to(x.dtype)
-
         return out
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}({self.n_channels})"
