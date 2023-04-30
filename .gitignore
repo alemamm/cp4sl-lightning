@@ -155,3 +155,6 @@ configs/local/default.yaml
 
 # Plots
 plots
+
+# Embeddings
+embeddings
