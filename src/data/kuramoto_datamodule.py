@@ -67,7 +67,8 @@ class KuramotoDataModule(LightningDataModule):
         )
         self.dataset_path = osp.join(self.hparams.data_dir, self.prefix)
 
-        self.original_adj: torch.tensor = None
+        self.normal_adj: torch.tensor = None
+        self.shuffled_adj: torch.tensor = None
 
         self.data_train: Optional[Dataset] = None
         self.data_val: Optional[Dataset] = None
@@ -81,12 +82,12 @@ class KuramotoDataModule(LightningDataModule):
                 torch.ones([self.hparams.cluster_size, self.hparams.cluster_size])
             )
             class_blocks.append(torch.ones(self.hparams.cluster_size, dtype=torch.int64) * n)
-        single_sample_adj = torch.block_diag(*cluster_blocks)
+        normal_adj = torch.block_diag(*cluster_blocks)
 
-        return single_sample_adj
+        return normal_adj
 
     def create_samples(self):
-        single_sample_adj = self.create_adjacency_matrix()
+        normal_adj = self.create_adjacency_matrix()
         nat_freqs = np.random.normal(
             loc=10, scale=1.0, size=self.hparams.n_clusters * self.hparams.cluster_size
         )
@@ -96,14 +97,14 @@ class KuramotoDataModule(LightningDataModule):
             T=self.hparams.n_timesteps
             * 2
             * 0.001,  # double timesteos to cover train and val/test ranges
-            n_nodes=len(single_sample_adj.numpy()),
+            n_nodes=len(normal_adj.numpy()),
             natfreqs=nat_freqs,
         )
 
         act_mats_train = []
         for i in tqdm(range(0, self.hparams.n_train)):
             act_mat = model.run(
-                adj_mat=single_sample_adj.numpy(),
+                adj_mat=normal_adj.numpy(),
                 angles_vec=np.random.uniform(
                     0, 2 * np.pi, size=self.hparams.n_clusters * self.hparams.cluster_size
                 ),
@@ -117,7 +118,7 @@ class KuramotoDataModule(LightningDataModule):
         act_mats_val = []
         for i in tqdm(range(0, self.hparams.n_val)):
             act_mat = model.run(
-                adj_mat=single_sample_adj.numpy(),
+                adj_mat=normal_adj.numpy(),
                 angles_vec=np.random.uniform(
                     0, 2 * np.pi, size=self.hparams.n_clusters * self.hparams.cluster_size
                 ),
@@ -131,13 +132,12 @@ class KuramotoDataModule(LightningDataModule):
         # Shuffling rows of the adjacency matrix
         r = torch.tensor([7, 1, 2, 3, 4, 5, 6, 0])
         c = torch.tensor([7, 1, 2, 3, 4, 5, 6, 0])
-        shuffled_sample_adj = single_sample_adj[r[:, None], c]  # shuffles rows
-        shuffled_sample_adj = single_sample_adj[r][:, c]  # shuffles columns
+        shuffled_adj = normal_adj[r[:, None], c]  # shuffle rows and columns
 
         act_mats_test = []
         for i in tqdm(range(0, self.hparams.n_test)):
             act_mat = model.run(
-                adj_mat=shuffled_sample_adj.numpy(),
+                adj_mat=shuffled_adj.numpy(),
                 angles_vec=np.random.uniform(
                     0, 2 * np.pi, size=self.hparams.n_clusters * self.hparams.cluster_size
                 ),
@@ -148,9 +148,9 @@ class KuramotoDataModule(LightningDataModule):
             :, self.hparams.n_timesteps : self.hparams.n_timesteps * 2
         ]
 
-        return single_sample_adj, act_mats_train_t, act_mats_val_t, act_mats_test_t
+        return normal_adj, shuffled_adj, act_mats_train_t, act_mats_val_t, act_mats_test_t
 
-    def save_data(self, single_sample_adj, features_train, features_val, features_test):
+    def save_data(self, normal_adj, shuffled_adj, features_train, features_val, features_test):
         # features
         torch.save(
             torch.sin(features_train).clone(), osp.join(self.dataset_path, "features_train.pt")
@@ -159,15 +159,23 @@ class KuramotoDataModule(LightningDataModule):
         torch.save(
             torch.sin(features_test).clone(), osp.join(self.dataset_path, "features_test.pt")
         )
-        # adj_original
-        torch.save(single_sample_adj, osp.join(self.dataset_path, "original_adj.pt"))
+        # adjacency normal
+        torch.save(normal_adj, osp.join(self.dataset_path, "normal_adj.pt"))
+        # adjacency shuffled
+        torch.save(shuffled_adj, osp.join(self.dataset_path, "shuffled_adj.pt"))
 
     def prepare_data(self):
         """Generate the dataset if it does not exist."""
         if not osp.exists(self.dataset_path):
             os.makedirs(self.dataset_path)
-            single_sample_adj, features_train, features_val, features_test = self.create_samples()
-            self.save_data(single_sample_adj, features_train, features_val, features_test)
+            (
+                normal_adj,
+                shuffled_adj,
+                features_train,
+                features_val,
+                features_test,
+            ) = self.create_samples()
+            self.save_data(normal_adj, shuffled_adj, features_train, features_val, features_test)
 
     def setup(self, stage: Optional[str] = None):
         """Load data.
@@ -176,8 +184,12 @@ class KuramotoDataModule(LightningDataModule):
         by lightning with both `trainer.fit()` and `trainer.test()`.
         """
         # load original adjacency matrix
-        if self.original_adj is None:
-            self.original_adj = torch.load(osp.join(self.dataset_path, "original_adj.pt"))
+        if self.normal_adj is None:
+            self.normal_adj = torch.load(osp.join(self.dataset_path, "normal_adj.pt"))
+
+        # load shuffled adjacency matrix
+        if self.shuffled_adj is None:
+            self.shuffled_adj = torch.load(osp.join(self.dataset_path, "shuffled_adj.pt"))
 
         # load datasets only if not loaded already
         if self.data_train is None:
@@ -185,21 +197,21 @@ class KuramotoDataModule(LightningDataModule):
                 -1, self.hparams.cluster_size * self.hparams.n_clusters, self.hparams.n_timesteps
             )
             self.data_train = TensorDataset(
-                train_features, self.original_adj.repeat(train_features.shape[0], 1, 1)
+                train_features, self.normal_adj.repeat(train_features.shape[0], 1, 1)
             )
         if self.data_val is None:
             val_features = torch.load(osp.join(self.dataset_path, "features_val.pt")).reshape(
                 -1, self.hparams.cluster_size * self.hparams.n_clusters, self.hparams.n_timesteps
             )
             self.data_val = TensorDataset(
-                val_features, self.original_adj.repeat(val_features.shape[0], 1, 1)
+                val_features, self.normal_adj.repeat(val_features.shape[0], 1, 1)
             )
         if self.data_test is None:
             test_features = torch.load(osp.join(self.dataset_path, "features_test.pt")).reshape(
                 -1, self.hparams.cluster_size * self.hparams.n_clusters, self.hparams.n_timesteps
             )
             self.data_test = TensorDataset(
-                test_features, self.original_adj.repeat(test_features.shape[0], 1, 1)
+                test_features, self.shuffled_adj.repeat(test_features.shape[0], 1, 1)
             )
 
     def train_dataloader(self):
