@@ -25,4 +25,4 @@ max_epochs: 100
 logger:
   wandb:
     tags: ${tags}
-    group: "cp4sl first paper draft"
+    group: "cp4sl paper draft v2"

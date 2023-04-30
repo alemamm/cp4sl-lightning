@@ -17,8 +17,6 @@ net:
   _target_: src.models.components.graph_dae.GraphDAE
   n_nodes: 8
   n_layers: 2
-  gen_mode: static # Options: "static", "dynamic"
+  gen_mode: dynamic # Options: "static", "dynamic"
   dropout_dae: 0.5
   dropout_adj: 0.0
-
-noise: normal
