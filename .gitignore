@@ -153,8 +153,8 @@ configs/local/default.yaml
 # Aim logging
 .aim
 
-# Plots
-plots
+# Results
+results
 
 # Embeddings
 embeddings
