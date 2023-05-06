@@ -1,0 +1,32 @@
+_target_: src.models.cp4sl_module.CP4SLLitModule
+
+optimizer:
+  _target_: torch.optim.Adam
+  _partial_: true
+  lr: 0.001
+  weight_decay: 0.0
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.ReduceLROnPlateau
+  _partial_: true
+  mode: min
+  factor: 0.1
+  patience: 1000
+
+net:
+  _target_: src.models.components.graph_dae.GraphDAE
+  seed: ${seed}
+  n_nodes: 8 # 8 for Kuramoto, 40 for SWaT
+  n_layers: 2
+  gen_mode: static # Options: "static", "dynamic"
+  dropout_dae: 0.5
+  dropout_graphtcn: 0.0
+  dropout_adj: 0.0
+  kernel_size: 15
+  n_channels: [10, 10, 10, 10, 10]
+  use_full_graph: False
+  use_true_adj: False
+  features_as_embeddings: False
+  use_correlation_matrix: False
+
+noise: 1.0

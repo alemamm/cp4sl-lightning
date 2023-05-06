@@ -1,5 +1,6 @@
 _target_: src.data.kuramoto_datamodule.KuramotoDataModule
 data_dir: ${paths.data_dir}
-batch_size: 32
+batch_size: 16
 num_workers: 4
+seed: ${seed} # using same seed to generate data as for training (torch)
 pin_memory: False

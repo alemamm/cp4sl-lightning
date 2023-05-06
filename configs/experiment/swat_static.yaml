@@ -1,0 +1,30 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=swat_static
+
+defaults:
+  - override /data: swat.yaml
+  - override /model: cp4sl.yaml
+  - override /callbacks: default.yaml
+  - override /trainer: default.yaml
+  - override /logger: wandb.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+tags: ["swat", "static"]
+
+trainer:
+  max_epochs: 11
+
+model:
+  net:
+    n_nodes: 40
+    gen_mode: static
+
+logger:
+  wandb:
+    tags: ${tags}
+    group: "SWaT"
+    name: "Static"
