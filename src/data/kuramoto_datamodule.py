@@ -45,13 +45,13 @@ class KuramotoDataModule(LightningDataModule):
         n_clusters: int = 2,
         cluster_size: int = 4,
         n_timesteps: int = 300,
-        n_train: int = 300,
+        n_train: int = 400,
         n_val: int = 100,
         n_test: int = 100,
-        seed: int = 0,  # Maybe possible to set seed globally elsewhere?
-        batch_size: int = 64,
+        seed: int = 0,  # Global seed is set via Hydra config
+        batch_size: int = 32,
         num_workers: int = 0,
-        data_dir: str = "data/kuramoto",
+        data_dir: str = "data",
         pin_memory: bool = False,
     ):
         super().__init__()
@@ -65,7 +65,7 @@ class KuramotoDataModule(LightningDataModule):
             n_clusters=self.hparams.n_clusters,
             cluster_size=self.hparams.cluster_size,
         )
-        self.dataset_path = osp.join(self.hparams.data_dir, self.prefix)
+        self.dataset_path = osp.join(self.hparams.data_dir, "kuramoto", self.prefix)
 
         self.normal_adj: torch.tensor = None
         self.shuffled_adj: torch.tensor = None

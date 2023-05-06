@@ -1,13 +1,15 @@
+import os
+from datetime import datetime
 from time import time
 from typing import Any
 
-import cv2 as cv
 import numpy as np
+import pandas as pd
 import torch
 from lightning import LightningModule
 from matplotlib import pyplot as plt
 from matplotlib.pyplot import cm
-from torchmetrics import MeanMetric, MinMetric
+from torchmetrics import MeanMetric
 from torchmetrics.regression import MeanAbsoluteError, MeanSquaredError
 
 from .components.utils import get_off_diagonal_elements, min_max_scale_batch
@@ -33,14 +35,18 @@ class CP4SLLitModule(LightningModule):
         net: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
         scheduler: torch.optim.lr_scheduler,
+        noise: float = 1.0,
     ):
         super().__init__()
 
         # this line allows to access init params with 'self.hparams' attribute
         # also ensures init params will be stored in ckpt
         self.save_hyperparameters(ignore=["net"], logger=False)
-
+        self.noise = noise
         self.net = net
+        self.results_dir = os.path.join(
+            "results", str(datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
+        )
 
         # loss function
         self.criterion = torch.nn.MSELoss()  # torch.nn.L1Loss()
@@ -71,7 +77,7 @@ class CP4SLLitModule(LightningModule):
 
     def model_step(self, batch: Any):
         x, gt_adj = batch
-        noise = torch.normal(0.0, 1.0, size=x.shape)
+        noise = torch.normal(0.0, self.noise, size=x.shape, device=self.device)
         noisy_x = x + noise
         denoised_x, adj, embeddings = self.forward(x, noisy_x)
         loss = self.criterion(denoised_x, x)
@@ -85,7 +91,7 @@ class CP4SLLitModule(LightningModule):
 
         gt_adj = get_off_diagonal_elements(gt_adj)
 
-        # not using batch of adjacency matrices if FP graph generation is used
+        # not using batch of adjacency matrices if static graph generator is used
         if len(adj.shape) < 3:
             gt_adj = gt_adj[0]
             # scale adj to range [0, 1] for graph error calculation
@@ -125,7 +131,7 @@ class CP4SLLitModule(LightningModule):
 
         gt_adj = get_off_diagonal_elements(gt_adj)
 
-        # not using batch of adjacency matrices if FP graph generation is used
+        # not using batch of adjacency matrices if static graph generator is used
         if len(adj.shape) < 3:
             gt_adj = gt_adj[0]
             # scale adj to range [0, 1] for graph error calculation
@@ -136,13 +142,23 @@ class CP4SLLitModule(LightningModule):
 
         self.val_adj_error(adj, gt_adj)
 
-        if self.current_epoch % 5 == 0:
-            plt.clf()
+        if not os.path.exists(self.results_dir):
+            os.makedirs(self.results_dir)
+
+        if self.current_epoch % 1 == 0:
+            val_time = str(time())
+            result_path = os.path.join(
+                self.results_dir, str(self.current_epoch) + "_" + val_time + "_val"
+            )
             if len(adj.shape) < 3:
-                plt.imshow(adj.detach().numpy())
+                batch_adj = adj.detach().cpu().numpy()
             else:
-                plt.imshow(np.mean(adj.detach().numpy(), axis=0))
-            plt.savefig("plots/" + str(time()) + "_" + str(self.current_epoch) + "_val.png")
+                batch_adj = np.mean(adj.detach().cpu().numpy(), axis=0)
+
+            plt.clf()
+            plt.imshow(batch_adj)
+            pd.DataFrame(batch_adj).to_csv(result_path + ".csv")
+            plt.savefig(result_path + ".png")
 
             plt.clf()
             color = cm.rainbow(np.linspace(0, 1, adj.shape[1]))
@@ -151,20 +167,18 @@ class CP4SLLitModule(LightningModule):
             for i, color in enumerate(colors):
                 random_sample = np.random.randint(0, x.shape[0])
                 plt.plot(
-                    x[random_sample, i, :].cpu().detach().numpy(),
+                    x[random_sample, i, :].detach().cpu().numpy(),
                     color=color,
                     linestyle="solid",
                     alpha=0.7,
                 )
                 plt.plot(
-                    denoised_x[random_sample, i, :].cpu().detach().numpy(),
+                    denoised_x[random_sample, i, :].detach().cpu().numpy(),
                     color=color,
                     linestyle="dashed",
                     alpha=0.7,
                 )
-            plt.savefig(
-                "plots/" + str(time()) + "_" + str(self.current_epoch) + "_x_denoised_x.png"
-            )
+            plt.savefig(result_path + "_x_denoised_x.png")
 
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log(
@@ -183,7 +197,7 @@ class CP4SLLitModule(LightningModule):
 
         gt_adj = get_off_diagonal_elements(gt_adj)
 
-        # not using batch of adjacency matrices if FP graph generation is used
+        # not using batch of adjacency matrices if static graph generator is used
         if len(adj.shape) < 3:
             gt_adj = gt_adj[0]
             # scale adj to range [0, 1] for graph error calculation
@@ -196,12 +210,18 @@ class CP4SLLitModule(LightningModule):
 
         # torch.save(embeddings, "embeddings/" + str(time()) + "_" + str(batch_idx) + "_embeddings.pt")
 
+        test_time = str(time())
         plt.clf()
+        result_path = os.path.join(
+            self.results_dir, str(self.current_epoch) + "_" + test_time + "_test"
+        )
         if len(adj.shape) < 3:
-            plt.imshow(adj.detach().numpy())
+            batch_adj = adj.detach().cpu().numpy()
         else:
-            plt.imshow(np.mean(adj.detach().numpy(), axis=0))
-        plt.savefig("plots/" + str(time()) + "_" + str(self.current_epoch) + "_test.png")
+            batch_adj = np.mean(adj.detach().cpu().numpy(), axis=0)
+        plt.imshow(batch_adj)
+        pd.DataFrame(batch_adj).to_csv(result_path + ".csv")
+        plt.savefig(result_path + ".png")
 
         self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log(
