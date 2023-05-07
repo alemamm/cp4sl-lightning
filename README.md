@@ -27,7 +27,7 @@ pip install -r requirements.txt
 
 ## How to run
 
-We use Hydra, PyTorch Lightning and Weights & Biases to manage experiments and log results.
+We use Hydra, PyTorch 2.0, PyTorch Lightning and Weights & Biases to manage experiments and log results.
 
 The default logger can be changed in the configuration file of an experiment. Experiment configuration files are located in
 ```bash
