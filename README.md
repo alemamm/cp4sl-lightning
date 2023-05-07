@@ -8,24 +8,12 @@ ______________________________________________________________________
 <a href="https://pytorchlightning.ai/"><img alt="Lightning" src="https://img.shields.io/badge/-Lightning-792ee5?logo=pytorchlightning&logoColor=white"></a>
 <a href="https://hydra.cc/"><img alt="Config: Hydra" src="https://img.shields.io/badge/Config-Hydra-89b8cd"></a>
 <a href="https://github.com/ashleve/lightning-hydra-template"><img alt="Template" src="https://img.shields.io/badge/-Lightning--Hydra--Template-017F2F?style=flat&logo=github&labelColor=gray"></a><br>
-[![Paper](http://img.shields.io/badge/paper-arxiv.1001.2234-B31B1B.svg)](https://www.nature.com/articles/nature14539)
-[![Conference](https://img.shields.io/badge/ECAI-2023-blueviolet.svg)](https://ecai2023.eu)
 
 </div>
 
-## Description
-
-What it does
-
 ## Installation
 
-#### Pip
-
 ```bash
-# clone project
-git clone https://github.com/YourGithubName/your-repo-name
-cd your-repo-name
-
 # [OPTIONAL] create conda environment
 conda create -n myenv python=3.9
 conda activate myenv
@@ -37,21 +25,60 @@ conda activate myenv
 pip install -r requirements.txt
 ```
 
-#### Conda
+## How to run
 
+We use Hydra, PyTorch 2.0, PyTorch Lightning and Weights & Biases to manage experiments and log results.
+
+The default logger can be changed in the configuration file of an experiment. Experiment configuration files are located in
 ```bash
-# clone project
-git clone https://github.com/YourGithubName/your-repo-name
-cd your-repo-name
-
-# create conda environment and install dependencies
-conda env create -f environment.yaml -n myenv
-
-# activate conda environment
-conda activate myenv
+configs/experiment/
 ```
 
-## How to run
+By default GPU training is enabled. This can be changed in the default trainer configuration file.
+```bash
+configs/trainer/default.yaml
+```
+
+Source code of the model itself can be found under
+```bash
+src/model/components
+```
+
+### Scripted experiments
+
+To run five seeded experiments for each respective configuration run:
+
+Static
+```bash
+bash scripts/schedule_kuramoto_static.sh
+```
+
+Dynamic
+```bash
+bash scripts/schedule_kuramoto_dynamic.sh
+```
+
+Correlation
+```bash
+bash scripts/schedule_kuramoto_correlation_adj.sh
+```
+
+True
+```bash
+bash scripts/schedule_kuramoto_true_adj.sh
+```
+
+Full
+```bash
+bash scripts/schedule_kuramoto_full_graph.sh
+```
+
+Features
+```bash
+bash scripts/schedule_kuramoto_features_as_embeddings.sh
+```
+
+### Running single experiments
 
 Train model with default configuration
 
