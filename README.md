@@ -13,19 +13,36 @@ ______________________________________________________________________
 
 ## Installation
 
-#### Conda
-
 ```bash
-cd cp4sl-lightning
+# [OPTIONAL] create conda environment
+conda create -n myenv python=3.9
+conda activate myenv
 
-# create conda environment and install dependencies
-conda env create -f environment.yaml -n cp4sl
+# install pytorch according to instructions
+# https://pytorch.org/get-started/
 
-# activate conda environment
-conda activate cp4sl
+# install requirements
+pip install -r requirements.txt
 ```
 
 ## How to run
+
+We use Hydra, PyTorch Lightning and Weights & Biases to manage experiments and log results.
+
+The default logger can be changed in the configuration file of an experiment. Experiment configuration files are located in
+```bash
+configs/experiment/
+```
+
+By default GPU training is enabled. This can be changed in the default trainer configuration file.
+```bash
+configs/trainer/default.yaml
+```
+
+Source code of the model itself can be found under
+```bash
+src/model/components
+```
 
 ### Scripted experiments
 
